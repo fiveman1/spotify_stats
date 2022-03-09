@@ -3,74 +3,113 @@ import os
 import pathlib
 from typing import Dict
 
-album_count = {}
-artist_count = {}
-track_count = {}
-year_count = {}
-year_trackers : Dict[int, "YearTracker"] = {}
-
-def add_count(s, d):
+def add_count(s, d, c=1):
     if s in d:
-        d[s] += 1
+        d[s] += c
     else:
-        d[s] = 1
+        d[s] = c
 
 def write_to_json(name : str, d : Dict, idx=1):
     with open(name + ".json", "w", encoding='utf8') as file:
         s = {k: v for k, v in sorted(d.items(), key=lambda item: item[idx], reverse=True)}
         json.dump(s, file, ensure_ascii=False)
 
+class Track:
+
+    def __init__(self, album : str, artist : str, track : str, uri : str):
+        self.album = album
+        self.artist = artist
+        self.track = track
+        self.uri = uri
+
+    def __hash__(self):
+        return hash(self.uri)
+
+    def __eq__(self, other):
+        return isinstance(other, Track) and self.uri == other.uri
+
+    @staticmethod
+    def from_dict(d) -> "Track":
+        return Track(d["master_metadata_album_album_name"],
+                     d["master_metadata_album_artist_name"],
+                     d["master_metadata_track_name"],
+                     d["spotify_track_uri"][14:])
+
 class YearTracker:
 
-    def __init__(self, year : int):
+    def __init__(self, year : str):
         self.year = year
-        self.albums : Dict[str, int] = {}
-        self.artists : Dict[str, int] = {}
-        self.tracks : Dict[str, int] = {}
-    
-    def add_album(self, album):
-        add_count(album, self.albums)
-
-    def add_artist(self, artist):
-        add_count(artist, self.artists)
+        self.tracks : Dict[Track, int] = {}
 
     def add_track(self, track):
         add_count(track, self.tracks)
 
-    def write(self):
+    def create_stats(self, all_albums, all_artists, all_tracks) -> int:
         dir = str(self.year) + "/"
         if not os.path.exists(dir):
             os.mkdir(dir)
-        write_to_json(dir + "albums", self.albums)
-        write_to_json(dir + "artists", self.artists)
-        write_to_json(dir + "tracks", self.tracks)
+        albums = {}
+        artists = {}
+        tracks = {}
+        total = 0
+        for track, count in self.tracks.items():
+            add_count(track.album, albums, count)
+            add_count(track.artist, artists, count)
+            add_count(track.track, tracks, count)
+            add_count(track.album, all_albums, count)
+            add_count(track.artist, all_artists, count)
+            add_count(track.track, all_tracks, count)
+            total += count
+        write_to_json(dir + "albums", albums)
+        write_to_json(dir + "artists", artists)
+        write_to_json(dir + "tracks", tracks)
+        return total
 
-for path in pathlib.Path("imports").iterdir():
-    if path.is_file():
-        with open(path, "r") as file:
-            for d in json.load(file):
-                album = d["albumName"]
-                artist = d["artistName"]
-                track = d["trackName"]
-                year = d["time"][:4]
-                add_count(album, album_count)
-                add_count(artist, artist_count)
-                add_count(track, track_count)
-                add_count(year, year_count)
-                if year not in year_trackers:
-                    year_trackers[year] = YearTracker(year)
-                tracker = year_trackers[year]
-                tracker.add_album(album)
-                tracker.add_artist(artist)
-                tracker.add_track(track)
+    def __hash__(self):
+        return hash(self.year)
 
-p = "all_time/"
-if not os.path.exists(p):
-    os.mkdir(p)
-for name, d in {"albums":album_count, "artists":artist_count, "tracks":track_count}.items():
-    write_to_json(p + name, d)
+    def __eq__(self, other):
+        return isinstance(other, YearTracker) and self.year == other.year
+        
+if __name__ == "__main__":
+    uri_to_track = {}
+    year_trackers : Dict[str, YearTracker] = {}
 
-write_to_json(p + "years", year_count, 0)
+    for path in pathlib.Path("imports").iterdir():
+        if path.is_file():
+            with open(path, "r") as file:
+                for d in json.load(file):
+                    uri = d["spotify_track_uri"]
+                    duration = d["ms_played"]
+                    if duration < 30000 or uri is None:
+                        continue
+                    id = uri[14:]
+                    if id in uri_to_track:
+                        track = uri_to_track[id]
+                    else:
+                        track = Track.from_dict(d)
+                        uri_to_track[id] = track
+                    year = d["ts"][:4]
+                    if year in year_trackers:
+                        tracker = year_trackers[year]
+                    else:
+                        tracker = YearTracker(year)
+                        year_trackers[year] = tracker
+                    tracker.add_track(track)
+                    add_count(track, uri_to_track)
 
-for tracker in year_trackers.values():
-    tracker.write()
+    all_albums = {}
+    all_artists = {}
+    all_tracks = {}
+    years = {}
+    for tracker in year_trackers.values():
+        years[tracker.year] = tracker.create_stats(all_albums, all_artists, all_tracks)
+
+    dir = "all_time/"
+    if not os.path.exists(dir):
+        os.mkdir(dir)
+
+    for name, d in {"albums":all_albums, "artists":all_artists, "tracks":all_tracks}.items():
+        write_to_json(dir + name, d)
+
+    write_to_json(dir + "years", years, 0)
