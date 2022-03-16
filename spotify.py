@@ -70,8 +70,8 @@ class YearTracker:
 
     def __eq__(self, other):
         return isinstance(other, YearTracker) and self.year == other.year
-        
-if __name__ == "__main__":
+
+def main():
     uri_to_track = {}
     year_trackers : Dict[str, YearTracker] = {}
 
@@ -113,3 +113,6 @@ if __name__ == "__main__":
         write_to_json(dir + name, d)
 
     write_to_json(dir + "years", years, 0)
+        
+if __name__ == "__main__":
+    main()
