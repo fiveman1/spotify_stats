@@ -75,12 +75,19 @@ def main():
     uri_to_track = {}
     year_trackers : Dict[str, YearTracker] = {}
 
+    year_to_minutes = {}
+
     for path in pathlib.Path("imports").iterdir():
         if path.is_file():
             with open(path, "r") as file:
                 for d in json.load(file):
                     uri = d["spotify_track_uri"]
                     duration = d["ms_played"]
+                    year = d["ts"][:4]
+                    if year in year_to_minutes:
+                        year_to_minutes[year] += duration
+                    else:
+                        year_to_minutes[year] = duration
                     if duration < 30000 or uri is None:
                         continue
                     id = uri[14:]
@@ -89,7 +96,7 @@ def main():
                     else:
                         track = Track.from_dict(d)
                         uri_to_track[id] = track
-                    year = d["ts"][:4]
+                    
                     if year in year_trackers:
                         tracker = year_trackers[year]
                     else:
@@ -97,6 +104,7 @@ def main():
                         year_trackers[year] = tracker
                     tracker.add_track(track)
                     add_count(track, uri_to_track)
+                    
 
     all_albums = {}
     all_artists = {}
@@ -113,6 +121,7 @@ def main():
         write_to_json(dir + name, d)
 
     write_to_json(dir + "years", years, 0)
+    write_to_json(dir + "minutes", {y: m // 60000 for y, m in year_to_minutes.items()}, 0)
         
 if __name__ == "__main__":
     main()
