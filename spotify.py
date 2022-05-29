@@ -79,7 +79,7 @@ def main():
 
     for path in pathlib.Path("imports").iterdir():
         if path.is_file():
-            with open(path, "r") as file:
+            with open(path, "r", encoding="utf-8") as file:
                 for d in json.load(file):
                     uri = d["spotify_track_uri"]
                     duration = d["ms_played"]
